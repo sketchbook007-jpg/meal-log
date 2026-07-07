@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#10b981">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>ミールログ — カロリー・PFC記録</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --text:#1a202c; --sub:#6b7280; --line:#e5e7eb;
+  --accent:#10b981; --accent-dark:#059669; --accent-bg:#ecfdf5;
+  --p-color:#ef4444; --f-color:#f59e0b; --c-color:#3b82f6;
+  --danger:#dc2626;
+  --radius:14px;
+  --safe-bottom:env(safe-area-inset-bottom, 0px);
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#111418; --card:#1c2128; --text:#e6e8eb; --sub:#9aa3ad; --line:#2d333b; --accent-bg:#0b2e23;}
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{font-size:16px}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  background:var(--bg);color:var(--text);
+  padding-bottom:calc(64px + var(--safe-bottom));
+  min-height:100vh;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;font-size:16px;color:var(--text)}
+
+/* ---------- header ---------- */
+header{
+  position:sticky;top:0;z-index:20;background:var(--bg);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 8px;
+}
+.date-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.date-nav h1{font-size:18px;font-weight:700;flex:1;text-align:center}
+.date-nav .sub-date{display:block;font-size:12px;color:var(--sub);font-weight:500}
+.nav-btn{width:40px;height:40px;border-radius:50%;font-size:20px;color:var(--sub);background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.today-jump{font-size:12px;color:var(--accent);font-weight:600;padding:6px 10px}
+#history-header,#settings-header{font-size:20px;font-weight:700;padding:4px}
+
+/* ---------- layout ---------- */
+main{padding:8px 16px 16px;max-width:640px;margin:0 auto}
+.card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card h2{font-size:14px;font-weight:700;color:var(--sub);margin-bottom:10px}
+.hidden{display:none!important}
+
+/* ---------- summary ---------- */
+.kcal-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px}
+.kcal-row .big{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums}
+.kcal-row .goal{color:var(--sub);font-size:14px}
+.kcal-remain{font-size:13px;color:var(--sub);margin-bottom:10px}
+.kcal-remain b{color:var(--accent)}
+.kcal-remain.over b{color:var(--danger)}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin-bottom:14px}
+.bar>i{display:block;height:100%;border-radius:5px;background:var(--accent);transition:width .4s}
+.bar>i.over{background:var(--danger)}
+.pfc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.pfc-cell .label{font-size:12px;color:var(--sub);display:flex;justify-content:space-between;margin-bottom:4px}
+.pfc-cell .val{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.pfc-cell .bar{height:6px;margin-bottom:0}
+.pfc-cell.p .bar>i{background:var(--p-color)}
+.pfc-cell.f .bar>i{background:var(--f-color)}
+.pfc-cell.c .bar>i{background:var(--c-color)}
+.pfc-ratio{margin-top:12px}
+.pfc-ratio .bar{display:flex;height:8px;margin-bottom:4px}
+.pfc-ratio .bar>i{border-radius:0;transition:width .4s}
+.pfc-ratio .bar>i:first-child{border-radius:5px 0 0 5px}
+.pfc-ratio .bar>i:last-child{border-radius:0 5px 5px 0}
+.pfc-ratio .legend{display:flex;gap:12px;font-size:11px;color:var(--sub)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px;vertical-align:1px}
+.dot.p{background:var(--p-color)}.dot.f{background:var(--f-color)}.dot.c{background:var(--c-color)}
+
+/* ---------- meal sections ---------- */
+.meal-section{margin-bottom:14px}
+.meal-section-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px 6px}
+.meal-section-head h3{font-size:14px;font-weight:700}
+.meal-section-head .sec-kcal{font-size:12px;color:var(--sub);margin-left:8px;font-weight:500}
+.add-small{color:var(--accent);font-size:22px;font-weight:600;width:34px;height:34px;line-height:1}
+.meal-card{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);width:100%;text-align:left}
+.meal-thumb{width:52px;height:52px;border-radius:10px;object-fit:cover;background:var(--accent-bg);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:22px}
+.meal-info{flex:1;min-width:0}
+.meal-info .name{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meal-info .macros{font-size:11px;color:var(--sub);margin-top:2px}
+.meal-kcal{font-weight:700;font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.meal-kcal small{font-weight:500;color:var(--sub);font-size:11px}
+.empty-note{font-size:12px;color:var(--sub);padding:2px 4px 8px}
+
+/* ---------- FAB ---------- */
+#fab{
+  position:fixed;right:20px;bottom:calc(78px + var(--safe-bottom));z-index:25;
+  width:58px;height:58px;border-radius:50%;background:var(--accent);color:#fff;
+  font-size:26px;box-shadow:0 4px 14px rgba(16,185,129,.45);
+}
+#fab:active{transform:scale(.95)}
+
+/* ---------- tab bar ---------- */
+nav.tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
+  background:var(--card);border-top:1px solid var(--line);
+  padding-bottom:var(--safe-bottom);
+}
+.tabbar button{flex:1;padding:9px 0 7px;font-size:10px;color:var(--sub);display:flex;flex-direction:column;align-items:center;gap:2px}
+.tabbar button .ico{font-size:20px;line-height:1}
+.tabbar button.active{color:var(--accent);font-weight:700}
+
+/* ---------- modal ---------- */
+.modal-wrap{position:fixed;inset:0;z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.modal{
+  position:relative;background:var(--bg);width:100%;max-width:640px;
+  border-radius:18px 18px 0 0;max-height:92vh;overflow-y:auto;
+  padding:14px 16px calc(20px + var(--safe-bottom));
+  animation:slideup .22s ease;
+}
+@keyframes slideup{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.modal-head h2{font-size:17px;font-weight:700}
+.modal-head .close{font-size:22px;color:var(--sub);padding:4px 8px}
+
+.photo-zone{
+  position:relative;border-radius:var(--radius);overflow:hidden;background:var(--card);
+  border:2px dashed var(--line);min-height:120px;display:flex;align-items:center;justify-content:center;
+  margin-bottom:12px;flex-direction:column;gap:6px;color:var(--sub);font-size:13px;
+}
+.photo-zone.has-img{border-style:solid;min-height:0}
+.photo-zone img{width:100%;max-height:240px;object-fit:cover;display:block}
+.photo-zone .cam-ico{font-size:30px}
+.photo-actions{display:flex;gap:8px;margin-bottom:12px}
+.btn{
+  flex:1;padding:12px;border-radius:12px;font-size:14px;font-weight:700;text-align:center;
+  background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08);
+}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:disabled{opacity:.5}
+.btn.ai{background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff}
+.btn.danger-text{color:var(--danger);background:none;box-shadow:none}
+.ai-status{font-size:12px;text-align:center;color:var(--sub);margin:-6px 0 10px;min-height:16px}
+.ai-status.err{color:var(--danger)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;font-weight:600;color:var(--sub);margin-bottom:5px}
+.form-row input,.form-row select,.form-row textarea{
+  width:100%;padding:11px 12px;border-radius:11px;border:1px solid var(--line);
+  background:var(--card);outline:none;
+}
+.form-row input:focus,.form-row select:focus{border-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.seg{display:flex;background:var(--card);border-radius:11px;padding:4px;gap:4px;border:1px solid var(--line)}
+.seg button{flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:600;color:var(--sub)}
+.seg button.on{background:var(--accent);color:#fff}
+.items-list{font-size:12px;color:var(--sub);background:var(--card);border-radius:11px;padding:10px 12px;margin-bottom:12px}
+.items-list div{display:flex;justify-content:space-between;padding:2px 0}
+.quick-title{font-size:12px;font-weight:600;color:var(--sub);margin:2px 0 6px}
+.chip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px;-webkit-overflow-scrolling:touch}
+.chip{
+  flex-shrink:0;background:var(--card);border:1px solid var(--line);border-radius:20px;
+  padding:7px 13px;font-size:12px;font-weight:600;white-space:nowrap;
+}
+.chip small{color:var(--sub);font-weight:500}
+.check-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:14px;padding:0 2px}
+.check-row input{width:18px;height:18px;accent-color:var(--accent)}
+
+/* ---------- history ---------- */
+.chart-box{width:100%;overflow:hidden}
+.chart-box svg{width:100%;height:auto;display:block}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--accent-bg);border-radius:11px;padding:12px}
+.stat .k{font-size:11px;color:var(--sub)}
+.stat .v{font-size:20px;font-weight:800;margin-top:2px}
+.stat .v small{font-size:11px;font-weight:500;color:var(--sub)}
+
+/* ---------- settings ---------- */
+.set-note{font-size:11px;color:var(--sub);margin-top:6px;line-height:1.6}
+.set-note a{color:var(--accent)}
+.preset-item{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.preset-item:last-child{border-bottom:none}
+.preset-item .del{color:var(--danger);font-size:12px;font-weight:600;padding:4px 8px}
+.preset-item small{color:var(--sub)}
+.link-btn{width:100%;text-align:center;padding:12px;color:var(--accent);font-weight:700;font-size:14px}
+.link-btn.danger{color:var(--danger)}
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--safe-bottom));
+  background:#1f2937;color:#fff;font-size:13px;padding:10px 18px;border-radius:22px;z-index:60;
+  opacity:0;pointer-events:none;transition:opacity .25s;max-width:86vw;text-align:center;
+}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="date-nav" id="today-header">
+    <button class="nav-btn" id="prev-day">‹</button>
+    <h1><span id="date-title">今日</span><span class="sub-date" id="date-sub"></span></h1>
+    <button class="nav-btn" id="next-day">›</button>
+  </div>
+  <div id="history-header" class="hidden">履歴</div>
+  <div id="settings-header" class="hidden">設定</div>
+</header>
+
+<main>
+  <!-- ============ TODAY ============ -->
+  <section id="view-today">
+    <div style="text-align:center" id="jump-wrap" class="hidden"><button class="today-jump" id="jump-today">今日に戻る</button></div>
+    <div class="card">
+      <div class="kcal-row"><span class="big" id="sum-kcal">0</span><span class="goal">/ <span id="sum-goal">2000</span> kcal</span></div>
+      <div class="kcal-remain" id="sum-remain">残り <b>2000</b> kcal</div>
+      <div class="bar"><i id="kcal-bar" style="width:0%"></i></div>
+      <div class="pfc-grid">
+        <div class="pfc-cell p"><div class="label"><span>たんぱく質</span></div><div class="val"><span id="sum-p">0</span><small style="font-size:11px;color:var(--sub)">/<span id="goal-p">100</span>g</small></div><div class="bar"><i id="bar-p" style="width:0%"></i></div></div>
+        <div class="pfc-cell f"><div class="label"><span>脂質</span></div><div class="val"><span id="sum-f">0</span><small style="font-size:11px;color:var(--sub)">/<span id="goal-f">55</span>g</small></div><div class="bar"><i id="bar-f" style="width:0%"></i></div></div>
+        <div class="pfc-cell c"><div class="label"><span>炭水化物</span></div><div class="val"><span id="sum-c">0</span><small style="font-size:11px;color:var(--sub)">/<span id="goal-c">250</span>g</small></div><div class="bar"><i id="bar-c" style="width:0%"></i></div></div>
+      </div>
+      <div class="pfc-ratio">
+        <div class="bar" id="ratio-bar"><i style="background:var(--p-color);width:33%"></i><i style="background:var(--f-color);width:33%"></i><i style="background:var(--c-color);width:34%"></i></div>
+        <div class="legend"><span><i class="dot p"></i>P <b id="ratio-p">-</b>%</span><span><i class="dot f"></i>F <b id="ratio-f">-</b>%</span><span><i class="dot c"></i>C <b id="ratio-c">-</b>%</span><span style="margin-left:auto">PFCバランス</span></div>
+      </div>
+    </div>
+    <div id="meal-sections"></div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section id="view-history" class="hidden">
+    <div class="seg" style="margin-bottom:14px">
+      <button data-days="7" class="on">7日</button><button data-days="14">14日</button><button data-days="30">30日</button>
+    </div>
+    <div class="card"><h2>摂取カロリー</h2><div class="chart-box" id="kcal-chart"></div></div>
+    <div class="card"><h2>PFCバランス(比率)</h2><div class="chart-box" id="pfc-chart"></div></div>
+    <div class="card">
+      <h2>期間サマリー(記録がある日)</h2>
+      <div class="stat-grid">
+        <div class="stat"><div class="k">平均カロリー</div><div class="v" id="st-avg">- <small>kcal</small></div></div>
+        <div class="stat"><div class="k">目標達成日数(±10%)</div><div class="v" id="st-ok">- <small>日</small></div></div>
+        <div class="stat"><div class="k">平均たんぱく質</div><div class="v" id="st-p">- <small>g</small></div></div>
+        <div class="stat"><div class="k">記録日数</div><div class="v" id="st-days">- <small>日</small></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="view-settings" class="hidden">
+    <div class="card">
+      <h2>目標設定</h2>
+      <div class="form-row"><label>1日の目標カロリー (kcal)</label><input type="number" id="set-kcal" inputmode="numeric"></div>
+      <div class="grid4" style="grid-template-columns:1fr 1fr 1fr auto;align-items:end">
+        <div class="form-row" style="margin-bottom:0"><label>P (g)</label><input type="number" id="set-p" inputmode="numeric"></div>
+        <div class="form-row" style="margin-bottom:0"><label>F (g)</label><input type="number" id="set-f" inputmode="numeric"></div>
+        <div class="form-row" style="margin-bottom:0"><label>C (g)</label><input type="number" id="set-c" inputmode="numeric"></div>
+        <button class="btn" style="flex:0;padding:11px 12px;font-size:12px" id="auto-pfc">自動計算</button>
+      </div>
+      <div class="set-note">「自動計算」は目標カロリーから P30% / F20% / C50% で算出します(ダイエット向け)。</div>
+    </div>
+
+    <div class="card">
+      <h2>AI写真解析 (Claude API)</h2>
+      <div class="form-row"><label>APIキー</label><input type="password" id="set-apikey" placeholder="sk-ant-api03-..." autocomplete="off"></div>
+      <div class="form-row"><label>モデル</label>
+        <select id="set-model">
+          <option value="claude-opus-4-8">Opus 4.8 — 高精度(約3〜5円/食)</option>
+          <option value="claude-sonnet-5">Sonnet 5 — バランス(約1〜2円/食)</option>
+          <option value="claude-haiku-4-5">Haiku 4.5 — 低コスト(約0.5円/食)</option>
+        </select>
+      </div>
+      <div class="set-note">
+        APIキーは <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> で発行できます(サブスクとは別のプリペイド従量課金)。キーはこの端末のブラウザ内にのみ保存され、送信先はAnthropic APIだけです。キー未設定でも手動入力・プリセットで利用できます。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>マイメニュー(プリセット)</h2>
+      <div id="preset-list"><div class="empty-note">まだありません。食事の保存時に「マイメニューに登録」をオンにすると追加されます。</div></div>
+    </div>
+
+    <div class="card">
+      <h2>データ</h2>
+      <button class="link-btn" id="btn-export">バックアップを書き出す (JSON)</button>
+      <button class="link-btn" id="btn-export-csv">CSVを書き出す(表計算用)</button>
+      <button class="link-btn" id="btn-import">バックアップを読み込む</button>
+      <input type="file" id="import-file" accept=".json" class="hidden">
+      <button class="link-btn danger" id="btn-wipe">全データを削除</button>
+    </div>
+    <div class="set-note" style="text-align:center;padding-bottom:8px">ミールログ v1.0 — データはこの端末内(ブラウザ)に保存されます</div>
+  </section>
+</main>
+
+<button id="fab">＋</button>
+
+<nav class="tabbar">
+  <button data-view="today" class="active"><span class="ico">🍽</span>今日</button>
+  <button data-view="history"><span class="ico">📊</span>履歴</button>
+  <button data-view="settings"><span class="ico">⚙️</span>設定</button>
+</nav>
+
+<!-- ============ ADD/EDIT MODAL ============ -->
+<div class="modal-wrap hidden" id="modal-wrap">
+  <div class="modal-bg" id="modal-bg"></div>
+  <div class="modal">
+    <div class="modal-head"><h2 id="modal-title">食事を記録</h2><button class="close" id="modal-close">✕</button></div>
+
+    <div class="photo-zone" id="photo-zone">
+      <span class="cam-ico">📷</span><span>タップして写真を撮る / 選ぶ</span>
+    </div>
+    <input type="file" id="photo-input" accept="image/*" class="hidden">
+    <div class="photo-actions" id="ai-actions">
+      <button class="btn ai" id="btn-analyze">✨ AIでカロリー・PFCを解析</button>
+    </div>
+    <div class="ai-status" id="ai-status"></div>
+
+    <div id="quick-add-wrap">
+      <div class="quick-title">クイック入力(マイメニュー / 最近の食事)</div>
+      <div class="chip-row" id="chip-row"></div>
+    </div>
+
+    <div class="form-row">
+      <label>食事の区分</label>
+      <div class="seg" id="mealtype-seg">
+        <button data-t="breakfast">朝食</button><button data-t="lunch">昼食</button><button data-t="dinner">夕食</button><button data-t="snack">間食</button>
+      </div>
+    </div>
+    <div class="form-row"><label>メニュー名</label><input type="text" id="in-name" placeholder="例: 鶏むね肉の照り焼き定食"></div>
+    <div class="grid4">
+      <div class="form-row"><label>kcal</label><input type="number" id="in-kcal" inputmode="numeric"></div>
+      <div class="form-row"><label>P (g)</label><input type="number" id="in-p" inputmode="decimal"></div>
+      <div class="form-row"><label>F (g)</label><input type="number" id="in-f" inputmode="decimal"></div>
+      <div class="form-row"><label>C (g)</label><input type="number" id="in-c" inputmode="decimal"></div>
+    </div>
+    <div class="items-list hidden" id="items-list"></div>
+    <div class="check-row"><input type="checkbox" id="save-preset"><label for="save-preset" style="font-size:13px">マイメニューに登録(次回からワンタップ入力)</label></div>
+
+    <button class="btn primary" id="btn-save" style="width:100%">保存する</button>
+    <button class="btn danger-text hidden" id="btn-delete" style="width:100%;margin-top:6px">この記録を削除</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ================= utilities ================= */
+const $ = id => document.getElementById(id);
+const MEAL_TYPES = [['breakfast','朝食','🌅'],['lunch','昼食','☀️'],['dinner','夕食','🌙'],['snack','間食','🍩']];
+const fmtDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const todayStr = () => fmtDate(new Date());
+const WEEK = ['日','月','火','水','木','金','土'];
+const round1 = n => Math.round(n*10)/10;
+let toastTimer;
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); }
+
+/* ================= IndexedDB ================= */
+let db;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const req = indexedDB.open('meallog', 1);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      const st = d.createObjectStore('meals', {keyPath:'id', autoIncrement:true});
+      st.createIndex('date','date');
+    };
+    req.onsuccess = e => { db = e.target.result; res(); };
+    req.onerror = () => rej(req.error);
+  });
+}
+const tx = mode => db.transaction('meals', mode).objectStore('meals');
+const dbPut = m => new Promise((res,rej)=>{ const r = tx('readwrite').put(m); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+const dbDel = id => new Promise((res,rej)=>{ const r = tx('readwrite').delete(id); r.onsuccess=res; r.onerror=()=>rej(r.error); });
+const dbByDate = date => new Promise((res,rej)=>{ const r = tx('readonly').index('date').getAll(date); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+const dbAll = () => new Promise((res,rej)=>{ const r = tx('readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+const dbClear = () => new Promise((res,rej)=>{ const r = tx('readwrite').clear(); r.onsuccess=res; r.onerror=()=>rej(r.error); });
+
+/* ================= settings / presets ================= */
+const DEFAULT_SETTINGS = {kcal:2000, p:100, f:55, c:250, apiKey:'', model:'claude-opus-4-8'};
+let settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem('meallog-settings')||'{}'));
+let presets = JSON.parse(localStorage.getItem('meallog-presets')||'[]');
+const saveSettings = () => localStorage.setItem('meallog-settings', JSON.stringify(settings));
+const savePresets = () => localStorage.setItem('meallog-presets', JSON.stringify(presets));
+
+/* ================= state ================= */
+let currentDate = todayStr();
+let currentView = 'today';
+let historyDays = 7;
+let editing = null;          // meal object being edited (null = new)
+let modalPhoto = {thumb:null, full:null}; // dataURLs
+let modalItems = [];
+let modalMealType = 'lunch';
+
+/* ================= view switching ================= */
+document.querySelectorAll('.tabbar button').forEach(b=>{
+  b.addEventListener('click', ()=>switchView(b.dataset.view));
+});
+function switchView(v){
+  currentView = v;
+  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
+  $('view-today').classList.toggle('hidden', v!=='today');
+  $('view-history').classList.toggle('hidden', v!=='history');
+  $('view-settings').classList.toggle('hidden', v!=='settings');
+  $('today-header').classList.toggle('hidden', v!=='today');
+  $('history-header').classList.toggle('hidden', v!=='history');
+  $('settings-header').classList.toggle('hidden', v!=='settings');
+  $('fab').classList.toggle('hidden', v!=='today');
+  if(v==='history') renderHistory();
+  if(v==='settings') renderSettings();
+}
+
+/* ================= date nav ================= */
+function shiftDate(days){
+  const d = new Date(currentDate+'T12:00:00');
+  d.setDate(d.getDate()+days);
+  currentDate = fmtDate(d);
+  renderToday();
+}
+$('prev-day').addEventListener('click', ()=>shiftDate(-1));
+$('next-day').addEventListener('click', ()=>shiftDate(1));
+$('jump-today').addEventListener('click', ()=>{ currentDate = todayStr(); renderToday(); });
+
+/* ================= today view ================= */
+function guessMealType(){
+  const h = new Date().getHours();
+  if(h<10) return 'breakfast';
+  if(h<15) return 'lunch';
+  if(h<21) return 'dinner';
+  return 'snack';
+}
+async function renderToday(){
+  const d = new Date(currentDate+'T12:00:00');
+  const isToday = currentDate===todayStr();
+  $('date-title').textContent = isToday ? '今日' : `${d.getMonth()+1}月${d.getDate()}日 (${WEEK[d.getDay()]})`;
+  $('date-sub').textContent = isToday ? `${d.getMonth()+1}月${d.getDate()}日 (${WEEK[d.getDay()]})` : '';
+  $('jump-wrap').classList.toggle('hidden', isToday);
+
+  const meals = await dbByDate(currentDate);
+  const sum = meals.reduce((a,m)=>({kcal:a.kcal+(m.kcal||0), p:a.p+(m.p||0), f:a.f+(m.f||0), c:a.c+(m.c||0)}), {kcal:0,p:0,f:0,c:0});
+
+  $('sum-kcal').textContent = Math.round(sum.kcal);
+  $('sum-goal').textContent = settings.kcal;
+  const remain = settings.kcal - sum.kcal;
+  const remEl = $('sum-remain');
+  remEl.classList.toggle('over', remain<0);
+  remEl.innerHTML = remain>=0 ? `残り <b>${Math.round(remain)}</b> kcal` : `<b>${Math.round(-remain)}</b> kcal オーバー`;
+  const pct = Math.min(100, sum.kcal/settings.kcal*100);
+  const kb = $('kcal-bar'); kb.style.width = pct+'%'; kb.classList.toggle('over', sum.kcal>settings.kcal);
+
+  [['p','sum-p','goal-p','bar-p'],['f','sum-f','goal-f','bar-f'],['c','sum-c','goal-c','bar-c']].forEach(([k,sv,gv,bar])=>{
+    $(sv).textContent = round1(sum[k]);
+    $(gv).textContent = settings[k];
+    $(bar).style.width = Math.min(100, sum[k]/settings[k]*100)+'%';
+  });
+
+  // PFC energy ratio (P4/F9/C4 kcal per g)
+  const pe = sum.p*4, fe = sum.f*9, ce = sum.c*4, tot = pe+fe+ce;
+  if(tot>0){
+    const pp = Math.round(pe/tot*100), fp = Math.round(fe/tot*100), cp = 100-pp-fp;
+    $('ratio-p').textContent=pp; $('ratio-f').textContent=fp; $('ratio-c').textContent=cp;
+    const bars = $('ratio-bar').children;
+    bars[0].style.width=pp+'%'; bars[1].style.width=fp+'%'; bars[2].style.width=cp+'%';
+  } else {
+    ['ratio-p','ratio-f','ratio-c'].forEach(i=>$(i).textContent='-');
+  }
+
+  // meal sections
+  const wrap = $('meal-sections');
+  wrap.innerHTML = '';
+  for(const [key,label,emoji] of MEAL_TYPES){
+    const list = meals.filter(m=>m.mealType===key);
+    const sec = document.createElement('div');
+    sec.className = 'meal-section';
+    const secKcal = Math.round(list.reduce((a,m)=>a+(m.kcal||0),0));
+    sec.innerHTML = `<div class="meal-section-head"><h3>${emoji} ${label}<span class="sec-kcal">${list.length? secKcal+' kcal':''}</span></h3><button class="add-small" data-add="${key}">＋</button></div>`;
+    if(!list.length){
+      const e = document.createElement('div'); e.className='empty-note'; e.textContent='記録なし'; sec.appendChild(e);
+    }
+    for(const m of list){
+      const card = document.createElement('button');
+      card.className = 'meal-card';
+      const thumb = m.thumb ? `<img class="meal-thumb" src="${m.thumb}" alt="">` : `<span class="meal-thumb">${emoji}</span>`;
+      card.innerHTML = `${thumb}<div class="meal-info"><div class="name"></div><div class="macros">P ${round1(m.p||0)}g ・ F ${round1(m.f||0)}g ・ C ${round1(m.c||0)}g</div></div><div class="meal-kcal">${Math.round(m.kcal||0)}<small> kcal</small></div>`;
+      card.querySelector('.name').textContent = m.name || '(名称なし)';
+      card.addEventListener('click', ()=>openModal(m));
+      sec.appendChild(card);
+    }
+    wrap.appendChild(sec);
+  }
+  wrap.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click', ()=>openModal(null, b.dataset.add)));
+}
+
+/* ================= modal ================= */
+function setMealType(t){
+  modalMealType = t;
+  document.querySelectorAll('#mealtype-seg button').forEach(b=>b.classList.toggle('on', b.dataset.t===t));
+}
+document.querySelectorAll('#mealtype-seg button').forEach(b=>b.addEventListener('click', ()=>setMealType(b.dataset.t)));
+
+function renderPhotoZone(){
+  const z = $('photo-zone');
+  if(modalPhoto.thumb){
+    z.classList.add('has-img');
+    z.innerHTML = `<img src="${modalPhoto.full||modalPhoto.thumb}" alt="食事の写真">`;
+  } else {
+    z.classList.remove('has-img');
+    z.innerHTML = '<span class="cam-ico">📷</span><span>タップして写真を撮る / 選ぶ</span>';
+  }
+  const hasKey = !!settings.apiKey;
+  $('btn-analyze').disabled = !modalPhoto.full;
+  $('ai-actions').classList.toggle('hidden', !hasKey && !modalPhoto.full);
+  if(!hasKey && modalPhoto.full){
+    $('btn-analyze').textContent = '✨ AI解析(設定でAPIキーを登録すると使えます)';
+    $('btn-analyze').disabled = true;
+  } else {
+    $('btn-analyze').innerHTML = '✨ AIでカロリー・PFCを解析';
+  }
+}
+function renderItems(){
+  const el = $('items-list');
+  if(!modalItems.length){ el.classList.add('hidden'); el.innerHTML=''; return; }
+  el.classList.remove('hidden');
+  el.innerHTML = '<div style="font-weight:700;color:var(--text)">内訳(AI推定)</div>' +
+    modalItems.map(i=>{
+      const d = document.createElement('div');
+      const l = document.createElement('span'); l.textContent = i.name + (i.amount? `(${i.amount})`:'');
+      const r = document.createElement('span'); r.textContent = `${Math.round(i.kcal||0)} kcal`;
+      d.append(l,r); return d.outerHTML;
+    }).join('');
+}
+function renderChips(){
+  const row = $('chip-row');
+  row.innerHTML = '';
+  const chips = presets.slice(0,12);
+  if(!chips.length){ $('quick-add-wrap').classList.add('hidden'); return; }
+  $('quick-add-wrap').classList.remove('hidden');
+  for(const p of chips){
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = p.name + ' ';
+    const s = document.createElement('small'); s.textContent = `${Math.round(p.kcal)}kcal`;
+    b.appendChild(s);
+    b.addEventListener('click', ()=>{
+      $('in-name').value = p.name;
+      $('in-kcal').value = Math.round(p.kcal);
+      $('in-p').value = p.p; $('in-f').value = p.f; $('in-c').value = p.c;
+    });
+    row.appendChild(b);
+  }
+}
+
+function openModal(meal, mealType){
+  editing = meal;
+  modalItems = meal?.items || [];
+  modalPhoto = {thumb: meal?.thumb||null, full:null};
+  $('modal-title').textContent = meal ? '記録を編集' : '食事を記録';
+  $('in-name').value = meal?.name || '';
+  $('in-kcal').value = meal?.kcal ?? '';
+  $('in-p').value = meal?.p ?? ''; $('in-f').value = meal?.f ?? ''; $('in-c').value = meal?.c ?? '';
+  $('save-preset').checked = false;
+  $('btn-delete').classList.toggle('hidden', !meal);
+  $('ai-status').textContent = ''; $('ai-status').classList.remove('err');
+  setMealType(meal?.mealType || mealType || guessMealType());
+  renderPhotoZone(); renderItems(); renderChips();
+  $('modal-wrap').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal(){
+  $('modal-wrap').classList.add('hidden');
+  document.body.style.overflow = '';
+  editing = null;
+}
+$('modal-close').addEventListener('click', closeModal);
+$('modal-bg').addEventListener('click', closeModal);
+$('fab').addEventListener('click', ()=>openModal(null));
+
+/* ---------- photo handling ---------- */
+$('photo-zone').addEventListener('click', ()=>$('photo-input').click());
+$('photo-input').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    modalPhoto.full = await resizeImage(file, 1092, 0.82);   // for API (≤~1.15Mpx keeps tokens sane)
+    modalPhoto.thumb = await resizeImage(file, 220, 0.7);    // stored thumbnail
+    renderPhotoZone();
+  }catch(err){ toast('画像の読み込みに失敗しました'); }
+  e.target.value = '';
+});
+function resizeImage(file, maxSide, quality){
+  return new Promise((res,rej)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxSide/Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width*scale); cv.height = Math.round(img.height*scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      res(cv.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+
+/* ---------- AI analysis ---------- */
+$('btn-analyze').addEventListener('click', analyzePhoto);
+async function analyzePhoto(){
+  if(!modalPhoto.full || !settings.apiKey) return;
+  const btn = $('btn-analyze'), st = $('ai-status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>解析中…(数秒かかります)';
+  st.textContent = ''; st.classList.remove('err');
+  try{
+    const b64 = modalPhoto.full.split(',')[1];
+    const body = {
+      model: settings.model,
+      max_tokens: 1500,
+      messages: [{
+        role: 'user',
+        content: [
+          {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
+          {type:'text', text:
+`この食事の写真を栄養士として分析してください。写っている料理・食品を特定し、日本の一般的な提供量を基準に、全体の摂取カロリーとPFC(たんぱく質・脂質・炭水化物)を推定してください。
+
+次のJSONだけを出力してください(説明文・コードブロック記号は不要):
+{"dish_name":"全体を表す短いメニュー名(日本語)","items":[{"name":"品目名","amount":"目安量(例: 150g, 1杯)","kcal":数値,"p":数値,"f":数値,"c":数値}],"total":{"kcal":数値,"p":数値,"f":数値,"c":数値},"confidence":"high/medium/low","note":"補足があれば一言(日本語)"}
+
+食べ物が写っていない場合は {"error":"食事の写真ではないようです"} と出力してください。`}
+        ]
+      }]
+    };
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-api-key': settings.apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify(body)
+    });
+    if(!resp.ok){
+      const err = await resp.json().catch(()=>null);
+      const msg = err?.error?.message || `HTTP ${resp.status}`;
+      if(resp.status===401) throw new Error('APIキーが無効です。設定を確認してください。');
+      if(resp.status===429) throw new Error('リクエストが多すぎます。少し待って再試行してください。');
+      throw new Error(msg);
+    }
+    const data = await resp.json();
+    if(data.stop_reason === 'refusal') throw new Error('この画像は解析できませんでした。');
+    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if(!jsonMatch) throw new Error('解析結果を読み取れませんでした。もう一度お試しください。');
+    const r = JSON.parse(jsonMatch[0]);
+    if(r.error) throw new Error(r.error);
+
+    $('in-name').value = r.dish_name || $('in-name').value;
+    $('in-kcal').value = Math.round(r.total?.kcal||0);
+    $('in-p').value = round1(r.total?.p||0);
+    $('in-f').value = round1(r.total?.f||0);
+    $('in-c').value = round1(r.total?.c||0);
+    modalItems = (r.items||[]).map(i=>({name:i.name, amount:i.amount, kcal:i.kcal, p:i.p, f:i.f, c:i.c}));
+    renderItems();
+    const conf = {high:'高', medium:'中', low:'低'}[r.confidence] || '-';
+    st.textContent = `解析完了(確度: ${conf})${r.note? ' — '+r.note : ''} 数値は編集できます`;
+  }catch(err){
+    st.textContent = '⚠ ' + (err.message || '解析に失敗しました');
+    st.classList.add('err');
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = '✨ AIでカロリー・PFCを解析';
+  }
+}
+
+/* ---------- save / delete ---------- */
+$('btn-save').addEventListener('click', async ()=>{
+  const name = $('in-name').value.trim();
+  const kcal = parseFloat($('in-kcal').value)||0;
+  if(!name && !kcal){ toast('メニュー名かカロリーを入力してください'); return; }
+  const meal = {
+    date: editing ? editing.date : currentDate,
+    mealType: modalMealType,
+    name, kcal,
+    p: parseFloat($('in-p').value)||0,
+    f: parseFloat($('in-f').value)||0,
+    c: parseFloat($('in-c').value)||0,
+    items: modalItems,
+    thumb: modalPhoto.thumb,
+    createdAt: editing?.createdAt || Date.now()
+  };
+  if(editing) meal.id = editing.id;
+  await dbPut(meal);
+  if($('save-preset').checked && name){
+    presets = presets.filter(p=>p.name!==name);
+    presets.unshift({name, kcal, p:meal.p, f:meal.f, c:meal.c});
+    presets = presets.slice(0,30);
+    savePresets();
+  }
+  closeModal();
+  renderToday();
+  toast(editing ? '更新しました' : '記録しました 🎉');
+});
+$('btn-delete').addEventListener('click', async ()=>{
+  if(!editing) return;
+  if(!confirm('この記録を削除しますか?')) return;
+  await dbDel(editing.id);
+  closeModal();
+  renderToday();
+  toast('削除しました');
+});
+
+/* ================= history ================= */
+document.querySelectorAll('#view-history .seg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('#view-history .seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    historyDays = +b.dataset.days;
+    renderHistory();
+  });
+});
+async function renderHistory(){
+  const all = await dbAll();
+  const byDate = {};
+  for(const m of all){
+    (byDate[m.date] = byDate[m.date] || {kcal:0,p:0,f:0,c:0});
+    byDate[m.date].kcal += m.kcal||0; byDate[m.date].p += m.p||0;
+    byDate[m.date].f += m.f||0; byDate[m.date].c += m.c||0;
+  }
+  const days = [];
+  for(let i=historyDays-1;i>=0;i--){
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const key = fmtDate(d);
+    days.push({key, label:`${d.getMonth()+1}/${d.getDate()}`, dow:d.getDay(), ...(byDate[key]||{kcal:0,p:0,f:0,c:0})});
+  }
+  drawKcalChart(days);
+  drawPfcChart(days);
+  const rec = days.filter(d=>d.kcal>0);
+  $('st-days').innerHTML = `${rec.length} <small>日</small>`;
+  if(rec.length){
+    const avg = rec.reduce((a,d)=>a+d.kcal,0)/rec.length;
+    const avgP = rec.reduce((a,d)=>a+d.p,0)/rec.length;
+    const ok = rec.filter(d=>Math.abs(d.kcal-settings.kcal)<=settings.kcal*0.1).length;
+    $('st-avg').innerHTML = `${Math.round(avg)} <small>kcal</small>`;
+    $('st-p').innerHTML = `${Math.round(avgP)} <small>g</small>`;
+    $('st-ok').innerHTML = `${ok} <small>/ ${rec.length}日</small>`;
+  } else {
+    $('st-avg').innerHTML = '- <small>kcal</small>'; $('st-p').innerHTML='- <small>g</small>'; $('st-ok').innerHTML='- <small>日</small>';
+  }
+}
+function drawKcalChart(days){
+  const W=600, H=230, padL=8, padB=26, padT=14;
+  const max = Math.max(settings.kcal*1.2, ...days.map(d=>d.kcal), 1);
+  const bw = (W-padL*2)/days.length;
+  const y = v => padT + (H-padB-padT)*(1 - v/max);
+  let bars='';
+  const showEvery = days.length>16 ? Math.ceil(days.length/8) : 1;
+  days.forEach((d,i)=>{
+    const x = padL + i*bw;
+    const h = (H-padB-padT)*(d.kcal/max);
+    const over = d.kcal > settings.kcal;
+    if(d.kcal>0) bars += `<rect x="${x+bw*0.15}" y="${y(d.kcal)}" width="${bw*0.7}" height="${Math.max(2,h)}" rx="3" fill="${over?'var(--danger)':'var(--accent)'}" opacity="${d.key===todayStr()?1:0.75}"/>`;
+    if(i%showEvery===0) bars += `<text x="${x+bw/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--sub)">${d.label}</text>`;
+  });
+  const gy = y(settings.kcal);
+  $('kcal-chart').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${padL}" y1="${gy}" x2="${W-padL}" y2="${gy}" stroke="var(--sub)" stroke-dasharray="5 4" stroke-width="1"/>
+      <text x="${W-padL}" y="${gy-5}" font-size="10" text-anchor="end" fill="var(--sub)">目標 ${settings.kcal}</text>
+      ${bars}
+    </svg>`;
+}
+function drawPfcChart(days){
+  const W=600, H=180, padL=8, padB=26, padT=8;
+  const bw = (W-padL*2)/days.length;
+  let bars='';
+  const showEvery = days.length>16 ? Math.ceil(days.length/8) : 1;
+  days.forEach((d,i)=>{
+    const x = padL + i*bw + bw*0.15, w = bw*0.7;
+    const pe=d.p*4, fe=d.f*9, ce=d.c*4, tot=pe+fe+ce;
+    if(tot>0){
+      const fullH = H-padB-padT;
+      const hp=fullH*pe/tot, hf=fullH*fe/tot, hc=fullH*ce/tot;
+      let cy = padT;
+      bars += `<rect x="${x}" y="${cy}" width="${w}" height="${hc}" fill="var(--c-color)"/>`; cy+=hc;
+      bars += `<rect x="${x}" y="${cy}" width="${w}" height="${hf}" fill="var(--f-color)"/>`; cy+=hf;
+      bars += `<rect x="${x}" y="${cy}" width="${w}" height="${hp}" fill="var(--p-color)"/>`;
+    }
+    if(i%showEvery===0) bars += `<text x="${x+w/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--sub)">${d.label}</text>`;
+  });
+  $('pfc-chart').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>
+     <div class="pfc-ratio"><div class="legend"><span><i class="dot p"></i>たんぱく質</span><span><i class="dot f"></i>脂質</span><span><i class="dot c"></i>炭水化物</span></div></div>`;
+}
+
+/* ================= settings ================= */
+function renderSettings(){
+  $('set-kcal').value = settings.kcal;
+  $('set-p').value = settings.p; $('set-f').value = settings.f; $('set-c').value = settings.c;
+  $('set-apikey').value = settings.apiKey;
+  $('set-model').value = settings.model;
+  const list = $('preset-list');
+  if(!presets.length){
+    list.innerHTML = '<div class="empty-note">まだありません。食事の保存時に「マイメニューに登録」をオンにすると追加されます。</div>';
+  } else {
+    list.innerHTML = '';
+    presets.forEach((p,i)=>{
+      const row = document.createElement('div'); row.className='preset-item';
+      const l = document.createElement('span'); l.textContent = p.name+' ';
+      const s = document.createElement('small'); s.textContent = `${Math.round(p.kcal)}kcal / P${p.p} F${p.f} C${p.c}`;
+      l.appendChild(s);
+      const del = document.createElement('button'); del.className='del'; del.textContent='削除';
+      del.addEventListener('click', ()=>{ presets.splice(i,1); savePresets(); renderSettings(); });
+      row.append(l, del);
+      list.appendChild(row);
+    });
+  }
+}
+['set-kcal','set-p','set-f','set-c'].forEach(id=>{
+  $(id).addEventListener('change', ()=>{
+    const key = id.replace('set-','');
+    const v = parseFloat($(id).value);
+    if(v>0){ settings[key]= (key==='kcal')? Math.round(v) : round1(v); saveSettings(); renderToday(); }
+  });
+});
+$('auto-pfc').addEventListener('click', ()=>{
+  const k = parseFloat($('set-kcal').value)||settings.kcal;
+  settings.kcal = Math.round(k);
+  settings.p = Math.round(k*0.30/4);
+  settings.f = Math.round(k*0.20/9);
+  settings.c = Math.round(k*0.50/4);
+  saveSettings(); renderSettings(); renderToday();
+  toast('P30% / F20% / C50% で設定しました');
+});
+$('set-apikey').addEventListener('change', ()=>{ settings.apiKey = $('set-apikey').value.trim(); saveSettings(); toast(settings.apiKey?'APIキーを保存しました':'APIキーを削除しました'); });
+$('set-model').addEventListener('change', ()=>{ settings.model = $('set-model').value; saveSettings(); });
+
+/* ---------- export / import ---------- */
+function download(filename, text, type){
+  const blob = new Blob([text], {type});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+}
+$('btn-export').addEventListener('click', async ()=>{
+  const meals = await dbAll();
+  download(`meallog-backup-${todayStr()}.json`, JSON.stringify({version:1, settings:{...settings, apiKey:''}, presets, meals}, null, 1), 'application/json');
+  toast('バックアップを書き出しました(APIキーは含まれません)');
+});
+$('btn-export-csv').addEventListener('click', async ()=>{
+  const meals = (await dbAll()).sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt);
+  const typeLabel = Object.fromEntries(MEAL_TYPES.map(([k,l])=>[k,l]));
+  const esc = s => `"${String(s??'').replace(/"/g,'""')}"`;
+  const rows = [['日付','区分','メニュー','kcal','たんぱく質g','脂質g','炭水化物g'].join(',')];
+  for(const m of meals) rows.push([m.date, typeLabel[m.mealType]||m.mealType, esc(m.name), Math.round(m.kcal||0), m.p||0, m.f||0, m.c||0].join(','));
+  download(`meallog-${todayStr()}.csv`, '﻿'+rows.join('\n'), 'text/csv');
+});
+$('btn-import').addEventListener('click', ()=>$('import-file').click());
+$('import-file').addEventListener('change', async e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    const data = JSON.parse(await file.text());
+    if(!Array.isArray(data.meals)) throw new Error('bad format');
+    if(!confirm(`${data.meals.length}件の記録を読み込みます。現在のデータに追加されます。よろしいですか?`)) return;
+    for(const m of data.meals){ delete m.id; await dbPut(m); }
+    if(Array.isArray(data.presets)){ presets = data.presets; savePresets(); }
+    if(data.settings){ const key = settings.apiKey; settings = Object.assign({}, DEFAULT_SETTINGS, data.settings); settings.apiKey = key; saveSettings(); }
+    renderToday(); renderSettings();
+    toast('読み込みました');
+  }catch(err){ toast('読み込みに失敗しました: ファイル形式を確認してください'); }
+  e.target.value='';
+});
+$('btn-wipe').addEventListener('click', async ()=>{
+  if(!confirm('全ての記録・設定を削除します。元に戻せません。よろしいですか?')) return;
+  if(!confirm('本当に削除しますか?')) return;
+  await dbClear();
+  localStorage.removeItem('meallog-settings');
+  localStorage.removeItem('meallog-presets');
+  location.reload();
+});
+
+/* ================= boot ================= */
+(async function(){
+  await openDB();
+  renderToday();
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
