@@ -76,6 +76,11 @@ main{padding:8px 16px 16px;max-width:640px;margin:0 auto}
 .pfc-ratio .legend{display:flex;gap:12px;font-size:11px;color:var(--sub)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px;vertical-align:1px}
 .dot.p{background:var(--p-color)}.dot.f{background:var(--f-color)}.dot.c{background:var(--c-color)}
+.balance-row{display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;flex-wrap:wrap}
+.balance-row .burn-label b{font-variant-numeric:tabular-nums}
+.mini-btn{padding:5px 11px;border:1px solid var(--line);border-radius:14px;font-size:11px;font-weight:700;color:var(--accent);background:var(--card)}
+.bal{margin-left:auto;font-size:13px}
+.bal b{font-variant-numeric:tabular-nums}
 
 /* ---------- meal sections ---------- */
 .meal-section{margin-bottom:14px}
@@ -225,6 +230,12 @@ nav.tabbar{
         <div class="bar" id="ratio-bar"><i style="background:var(--p-color);width:33%"></i><i style="background:var(--f-color);width:33%"></i><i style="background:var(--c-color);width:34%"></i></div>
         <div class="legend"><span><i class="dot p"></i>P <b id="ratio-p">-</b>%</span><span><i class="dot f"></i>F <b id="ratio-f">-</b>%</span><span><i class="dot c"></i>C <b id="ratio-c">-</b>%</span><span style="margin-left:auto">PFCバランス</span></div>
       </div>
+      <div class="balance-row">
+        <span class="burn-label">🔥 消費 <b id="burn-val">未入力</b></span>
+        <button class="mini-btn" id="burn-edit">入力</button>
+        <button class="mini-btn" id="burn-paste">📋 取込</button>
+        <span class="bal" id="bal-val"></span>
+      </div>
     </div>
     <div id="meal-sections"></div>
   </section>
@@ -243,6 +254,8 @@ nav.tabbar{
         <div class="stat"><div class="k">目標達成日数(±10%)</div><div class="v" id="st-ok">- <small>日</small></div></div>
         <div class="stat"><div class="k">平均たんぱく質</div><div class="v" id="st-p">- <small>g</small></div></div>
         <div class="stat"><div class="k">記録日数</div><div class="v" id="st-days">- <small>日</small></div></div>
+        <div class="stat"><div class="k">平均消費カロリー</div><div class="v" id="st-burn">- <small>kcal</small></div></div>
+        <div class="stat"><div class="k">平均収支(摂取−消費)</div><div class="v" id="st-bal">- <small>kcal</small></div></div>
       </div>
     </div>
   </section>
@@ -360,11 +373,16 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('sho
 let db;
 function openDB(){
   return new Promise((res,rej)=>{
-    const req = indexedDB.open('meallog', 1);
+    const req = indexedDB.open('meallog', 2);
     req.onupgradeneeded = e => {
       const d = e.target.result;
-      const st = d.createObjectStore('meals', {keyPath:'id', autoIncrement:true});
-      st.createIndex('date','date');
+      if(!d.objectStoreNames.contains('meals')){
+        const st = d.createObjectStore('meals', {keyPath:'id', autoIncrement:true});
+        st.createIndex('date','date');
+      }
+      if(!d.objectStoreNames.contains('days')){
+        d.createObjectStore('days', {keyPath:'date'});   // {date, burned}
+      }
     };
     req.onsuccess = e => { db = e.target.result; res(); };
     req.onerror = () => rej(req.error);
@@ -376,6 +394,11 @@ const dbDel = id => new Promise((res,rej)=>{ const r = tx('readwrite').delete(id
 const dbByDate = date => new Promise((res,rej)=>{ const r = tx('readonly').index('date').getAll(date); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
 const dbAll = () => new Promise((res,rej)=>{ const r = tx('readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
 const dbClear = () => new Promise((res,rej)=>{ const r = tx('readwrite').clear(); r.onsuccess=res; r.onerror=()=>rej(r.error); });
+const dtx = mode => db.transaction('days', mode).objectStore('days');
+const dayGet = date => new Promise((res,rej)=>{ const r = dtx('readonly').get(date); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+const dayPut = o => new Promise((res,rej)=>{ const r = dtx('readwrite').put(o); r.onsuccess=res; r.onerror=()=>rej(r.error); });
+const dayAll = () => new Promise((res,rej)=>{ const r = dtx('readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+const dayClear = () => new Promise((res,rej)=>{ const r = dtx('readwrite').clear(); r.onsuccess=res; r.onerror=()=>rej(r.error); });
 
 /* ================= settings / presets ================= */
 const DEFAULT_SETTINGS = {kcal:2000, p:100, f:55, c:250, apiKey:'', model:'claude-opus-4-8'};
@@ -455,6 +478,18 @@ async function renderToday(){
     $(bar).style.width = Math.min(100, sum[k]/settings[k]*100)+'%';
   });
 
+  // burned calories & balance
+  const burned = (await dayGet(currentDate))?.burned || 0;
+  $('burn-val').textContent = burned ? `${Math.round(burned)} kcal` : '未入力';
+  const bal = $('bal-val');
+  if(burned > 0){
+    const diff = Math.round(sum.kcal - burned);
+    const color = diff <= 0 ? 'var(--accent)' : 'var(--danger)';
+    bal.innerHTML = `収支 <b style="color:${color}">${diff > 0 ? '+' : ''}${diff}</b> kcal`;
+  } else {
+    bal.textContent = '';
+  }
+
   // PFC energy ratio (P4/F9/C4 kcal per g)
   const pe = sum.p*4, fe = sum.f*9, ce = sum.c*4, tot = pe+fe+ce;
   if(tot>0){
@@ -491,6 +526,30 @@ async function renderToday(){
   }
   wrap.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click', ()=>openModal(null, b.dataset.add)));
 }
+
+/* ---------- burned calories input ---------- */
+$('burn-edit').addEventListener('click', async ()=>{
+  const cur = (await dayGet(currentDate))?.burned || '';
+  const v = prompt('この日の消費カロリー(kcal)を入力\n※ヘルスケアの「アクティブ+安静時」の合計がおすすめ', cur);
+  if(v === null) return;
+  const n = Math.round(parseFloat(v));
+  if(!(n >= 0 && n < 20000)){ toast('0〜19999の数値を入力してください'); return; }
+  await dayPut({date: currentDate, burned: n});
+  renderToday();
+});
+$('burn-paste').addEventListener('click', async ()=>{
+  try{
+    const text = await navigator.clipboard.readText();
+    const m = String(text).replace(/[,，]/g,'').match(/(\d+(?:\.\d+)?)/);
+    const n = m ? Math.round(parseFloat(m[1])) : NaN;
+    if(!(n > 0 && n < 20000)) throw new Error();
+    await dayPut({date: currentDate, burned: n});
+    renderToday();
+    toast(`消費カロリー ${n} kcal を記録しました 🔥`);
+  }catch(e){
+    toast('クリップボードから数値を読み取れませんでした。先にショートカットを実行してください');
+  }
+});
 
 /* ================= modal ================= */
 function setMealType(t){
@@ -729,11 +788,13 @@ async function renderHistory(){
     byDate[m.date].kcal += m.kcal||0; byDate[m.date].p += m.p||0;
     byDate[m.date].f += m.f||0; byDate[m.date].c += m.c||0;
   }
+  const burnMap = {};
+  for(const d of await dayAll()) burnMap[d.date] = d.burned||0;
   const days = [];
   for(let i=historyDays-1;i>=0;i--){
     const d = new Date(); d.setDate(d.getDate()-i);
     const key = fmtDate(d);
-    days.push({key, label:`${d.getMonth()+1}/${d.getDate()}`, dow:d.getDay(), ...(byDate[key]||{kcal:0,p:0,f:0,c:0})});
+    days.push({key, label:`${d.getMonth()+1}/${d.getDate()}`, dow:d.getDay(), burned:burnMap[key]||0, ...(byDate[key]||{kcal:0,p:0,f:0,c:0})});
   }
   drawKcalChart(days);
   drawPfcChart(days);
@@ -749,6 +810,17 @@ async function renderHistory(){
   } else {
     $('st-avg').innerHTML = '- <small>kcal</small>'; $('st-p').innerHTML='- <small>g</small>'; $('st-ok').innerHTML='- <small>日</small>';
   }
+  const burnDays = days.filter(d=>d.burned>0);
+  $('st-burn').innerHTML = burnDays.length
+    ? `${Math.round(burnDays.reduce((a,d)=>a+d.burned,0)/burnDays.length)} <small>kcal</small>` : '- <small>kcal</small>';
+  const balDays = days.filter(d=>d.burned>0 && d.kcal>0);
+  if(balDays.length){
+    const avgBal = Math.round(balDays.reduce((a,d)=>a+(d.kcal-d.burned),0)/balDays.length);
+    $('st-bal').innerHTML = `${avgBal>0?'+':''}${avgBal} <small>kcal</small>`;
+    $('st-bal').style.color = avgBal<=0 ? 'var(--accent)' : 'var(--danger)';
+  } else {
+    $('st-bal').innerHTML = '- <small>kcal</small>'; $('st-bal').style.color = '';
+  }
 }
 function drawKcalChart(days){
   const W=600, H=230, padL=8, padB=26, padT=14;
@@ -762,15 +834,18 @@ function drawKcalChart(days){
     const h = (H-padB-padT)*(d.kcal/max);
     const over = d.kcal > settings.kcal;
     if(d.kcal>0) bars += `<rect x="${x+bw*0.15}" y="${y(d.kcal)}" width="${bw*0.7}" height="${Math.max(2,h)}" rx="3" fill="${over?'var(--danger)':'var(--accent)'}" opacity="${d.key===todayStr()?1:0.75}"/>`;
+    if(d.burned>0){ const by = y(Math.min(d.burned, max)); bars += `<line x1="${x+bw*0.08}" y1="${by}" x2="${x+bw*0.92}" y2="${by}" stroke="#f97316" stroke-width="2.5" stroke-linecap="round"/>`; }
     if(i%showEvery===0) bars += `<text x="${x+bw/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--sub)">${d.label}</text>`;
   });
   const gy = y(settings.kcal);
+  const hasBurn = days.some(d=>d.burned>0);
   $('kcal-chart').innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
       <line x1="${padL}" y1="${gy}" x2="${W-padL}" y2="${gy}" stroke="var(--sub)" stroke-dasharray="5 4" stroke-width="1"/>
       <text x="${W-padL}" y="${gy-5}" font-size="10" text-anchor="end" fill="var(--sub)">目標 ${settings.kcal}</text>
       ${bars}
-    </svg>`;
+    </svg>` +
+    (hasBurn ? '<div style="font-size:11px;color:var(--sub);margin-top:4px"><span style="color:var(--accent)">■</span> 摂取　<span style="color:#f97316;font-weight:700">—</span> 消費カロリー</div>' : '');
 }
 function drawPfcChart(days){
   const W=600, H=180, padL=8, padB=26, padT=8;
@@ -848,7 +923,8 @@ function download(filename, text, type){
 }
 $('btn-export').addEventListener('click', async ()=>{
   const meals = await dbAll();
-  download(`meallog-backup-${todayStr()}.json`, JSON.stringify({version:1, settings:{...settings, apiKey:''}, presets, meals}, null, 1), 'application/json');
+  const daysData = await dayAll();
+  download(`meallog-backup-${todayStr()}.json`, JSON.stringify({version:2, settings:{...settings, apiKey:''}, presets, meals, days:daysData}, null, 1), 'application/json');
   toast('バックアップを書き出しました(APIキーは含まれません)');
 });
 $('btn-export-csv').addEventListener('click', async ()=>{
@@ -868,6 +944,7 @@ $('import-file').addEventListener('change', async e=>{
     if(!Array.isArray(data.meals)) throw new Error('bad format');
     if(!confirm(`${data.meals.length}件の記録を読み込みます。現在のデータに追加されます。よろしいですか?`)) return;
     for(const m of data.meals){ delete m.id; await dbPut(m); }
+    if(Array.isArray(data.days)){ for(const d of data.days){ if(d.date) await dayPut(d); } }
     if(Array.isArray(data.presets)){ presets = data.presets; savePresets(); }
     if(data.settings){ const key = settings.apiKey; settings = Object.assign({}, DEFAULT_SETTINGS, data.settings); settings.apiKey = key; saveSettings(); }
     renderToday(); renderSettings();
@@ -879,6 +956,7 @@ $('btn-wipe').addEventListener('click', async ()=>{
   if(!confirm('全ての記録・設定を削除します。元に戻せません。よろしいですか?')) return;
   if(!confirm('本当に削除しますか?')) return;
   await dbClear();
+  await dayClear();
   localStorage.removeItem('meallog-settings');
   localStorage.removeItem('meallog-presets');
   location.reload();
@@ -887,6 +965,20 @@ $('btn-wipe').addEventListener('click', async ()=>{
 /* ================= boot ================= */
 (async function(){
   await openDB();
+  // Shortcut integration: ?burned=520 (optional &date=YYYY-MM-DD)
+  try{
+    const qp = new URLSearchParams(location.search);
+    if(qp.has('burned')){
+      const n = Math.round(parseFloat(qp.get('burned')));
+      const dq = qp.get('date')||'';
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(dq) ? dq : todayStr();
+      if(n > 0 && n < 20000){
+        await dayPut({date, burned:n});
+        toast(`消費カロリー ${n} kcal を記録しました 🔥`);
+      }
+      history.replaceState(null, '', location.pathname);
+    }
+  }catch(e){}
   renderToday();
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js').catch(()=>{});

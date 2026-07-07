@@ -1,4 +1,4 @@
-const CACHE = 'meallog-v1';
+const CACHE = 'meallog-v2';
 const ASSETS = [
   './',
   './index.html',
