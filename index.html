@@ -353,6 +353,17 @@ nav.tabbar{
       <div class="form-row"><label>F (g)</label><input type="number" id="in-f" inputmode="decimal"></div>
       <div class="form-row"><label>C (g)</label><input type="number" id="in-c" inputmode="decimal"></div>
     </div>
+    <div class="form-row">
+      <label>量(1人前 = ×1)</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="nav-btn" id="qty-minus" style="width:36px;height:36px;font-size:18px">−</button>
+        <div class="seg" id="qty-seg" style="flex:1">
+          <button data-q="0.5">×0.5</button><button data-q="1" class="on">×1</button><button data-q="1.5">×1.5</button><button data-q="2">×2</button>
+        </div>
+        <button class="nav-btn" id="qty-plus" style="width:36px;height:36px;font-size:18px">＋</button>
+      </div>
+      <div class="set-note" id="qty-hint" style="min-height:14px"></div>
+    </div>
     <div class="items-list hidden" id="items-list"></div>
     <div class="check-row"><input type="checkbox" id="save-preset"><label for="save-preset" style="font-size:13px">マイメニューに登録(次回からワンタップ入力)</label></div>
 
@@ -421,6 +432,7 @@ let editing = null;          // meal object being edited (null = new)
 let modalPhoto = {thumb:null, full:null}; // dataURLs
 let modalItems = [];
 let modalMealType = 'lunch';
+let modalQty = 1;            // serving multiplier applied at save time
 
 /* ================= view switching ================= */
 document.querySelectorAll('.tabbar button').forEach(b=>{
@@ -564,6 +576,24 @@ function setMealType(t){
 }
 document.querySelectorAll('#mealtype-seg button').forEach(b=>b.addEventListener('click', ()=>setMealType(b.dataset.t)));
 
+/* ---------- quantity multiplier ---------- */
+function setQty(q){
+  modalQty = Math.min(10, Math.max(0.25, Math.round(q*4)/4));  // 0.25刻み, 0.25〜10
+  document.querySelectorAll('#qty-seg button').forEach(b=>b.classList.toggle('on', parseFloat(b.dataset.q)===modalQty));
+  updateQtyHint();
+}
+function updateQtyHint(){
+  const hint = $('qty-hint');
+  const kcal = parseFloat($('in-kcal').value)||0;
+  if(modalQty === 1){ hint.textContent = ''; return; }
+  const p = parseFloat($('in-p').value)||0, f = parseFloat($('in-f').value)||0, c = parseFloat($('in-c').value)||0;
+  hint.textContent = `×${modalQty} → ${Math.round(kcal*modalQty)} kcal / P${round1(p*modalQty)} F${round1(f*modalQty)} C${round1(c*modalQty)}g で保存されます`;
+}
+document.querySelectorAll('#qty-seg button').forEach(b=>b.addEventListener('click', ()=>setQty(parseFloat(b.dataset.q))));
+$('qty-minus').addEventListener('click', ()=>setQty(modalQty - 0.25));
+$('qty-plus').addEventListener('click', ()=>setQty(modalQty + 0.25));
+['in-kcal','in-p','in-f','in-c'].forEach(id=>$(id).addEventListener('input', updateQtyHint));
+
 function renderPhotoZone(){
   const z = $('photo-zone');
   if(modalPhoto.thumb){
@@ -671,6 +701,7 @@ function openModal(meal, mealType){
   $('btn-delete').classList.toggle('hidden', !meal);
   $('ai-status').textContent = ''; $('ai-status').classList.remove('err');
   setMealType(meal?.mealType || mealType || guessMealType());
+  setQty(1);
   renderPhotoZone(); renderItems(); renderChips();
   $('modal-wrap').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
@@ -814,24 +845,32 @@ ${AI_JSON_SPEC}
 /* ---------- save / delete ---------- */
 $('btn-save').addEventListener('click', async ()=>{
   const name = $('in-name').value.trim();
-  const kcal = parseFloat($('in-kcal').value)||0;
-  if(!name && !kcal){ toast('メニュー名かカロリーを入力してください'); return; }
+  const baseKcal = parseFloat($('in-kcal').value)||0;
+  const baseP = parseFloat($('in-p').value)||0;
+  const baseF = parseFloat($('in-f').value)||0;
+  const baseC = parseFloat($('in-c').value)||0;
+  if(!name && !baseKcal){ toast('メニュー名かカロリーを入力してください'); return; }
+  const q = modalQty;
   const meal = {
     date: editing ? editing.date : currentDate,
     mealType: modalMealType,
-    name, kcal,
-    p: parseFloat($('in-p').value)||0,
-    f: parseFloat($('in-f').value)||0,
-    c: parseFloat($('in-c').value)||0,
-    items: modalItems,
+    name: q !== 1 ? `${name}(×${q})` : name,
+    kcal: Math.round(baseKcal*q),
+    p: round1(baseP*q),
+    f: round1(baseF*q),
+    c: round1(baseC*q),
+    items: q !== 1
+      ? modalItems.map(i=>({...i, kcal:Math.round((i.kcal||0)*q), p:round1((i.p||0)*q), f:round1((i.f||0)*q), c:round1((i.c||0)*q)}))
+      : modalItems,
     thumb: modalPhoto.thumb,
     createdAt: editing?.createdAt || Date.now()
   };
   if(editing) meal.id = editing.id;
   await dbPut(meal);
   if($('save-preset').checked && name){
+    // マイメニューには×1(1人前)の値で登録する
     presets = presets.filter(p=>p.name!==name);
-    presets.unshift({name, kcal, p:meal.p, f:meal.f, c:meal.c});
+    presets.unshift({name, kcal:Math.round(baseKcal), p:baseP, f:baseF, c:baseC});
     presets = presets.slice(0,30);
     savePresets();
   }
