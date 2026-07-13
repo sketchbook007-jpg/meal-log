@@ -375,6 +375,7 @@ nav.tabbar{
     <div class="items-list hidden" id="items-list"></div>
     <div class="check-row"><input type="checkbox" id="save-preset"><label for="save-preset" style="font-size:13px">マイメニューに登録(次回からワンタップ入力)</label></div>
 
+    <button class="btn hidden" id="btn-save-split" style="width:100%;margin-bottom:8px;color:var(--accent)"></button>
     <button class="btn primary" id="btn-save" style="width:100%">保存する</button>
     <button class="btn danger-text hidden" id="btn-delete" style="width:100%;margin-top:6px">この記録を削除</button>
   </div>
@@ -623,15 +624,47 @@ function renderPhotoZone(){
 }
 function renderItems(){
   const el = $('items-list');
-  if(!modalItems.length){ el.classList.add('hidden'); el.innerHTML=''; return; }
+  if(!modalItems.length){ el.classList.add('hidden'); el.innerHTML=''; updateSplitBtn(); return; }
   el.classList.remove('hidden');
-  el.innerHTML = '<div style="font-weight:700;color:var(--text)">内訳(AI推定)</div>' +
-    modalItems.map(i=>{
-      const d = document.createElement('div');
-      const l = document.createElement('span'); l.textContent = i.name + (i.amount? `(${i.amount})`:'');
-      const r = document.createElement('span'); r.textContent = `${Math.round(i.kcal||0)} kcal`;
-      d.append(l,r); return d.outerHTML;
-    }).join('');
+  el.innerHTML = '';
+  const head = document.createElement('div');
+  head.style.cssText = 'font-weight:700;color:var(--text)';
+  head.textContent = '内訳(✕で除外できます)';
+  el.appendChild(head);
+  modalItems.forEach((i, idx)=>{
+    const row = document.createElement('div');
+    const l = document.createElement('span');
+    l.textContent = i.name + (i.amount? `(${i.amount})`:'');
+    l.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    const r = document.createElement('span');
+    r.style.cssText = 'display:flex;gap:10px;align-items:center;flex-shrink:0';
+    const k = document.createElement('span');
+    k.textContent = `${Math.round(i.kcal||0)} kcal`;
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    x.setAttribute('aria-label', `${i.name}を除外`);
+    x.style.cssText = 'color:var(--danger);font-weight:700;font-size:13px;padding:2px 4px';
+    x.addEventListener('click', ()=>{
+      // 合計値からこの品目分を引く
+      $('in-kcal').value = Math.max(0, Math.round((parseFloat($('in-kcal').value)||0) - (i.kcal||0)));
+      $('in-p').value = Math.max(0, round1((parseFloat($('in-p').value)||0) - (i.p||0)));
+      $('in-f').value = Math.max(0, round1((parseFloat($('in-f').value)||0) - (i.f||0)));
+      $('in-c').value = Math.max(0, round1((parseFloat($('in-c').value)||0) - (i.c||0)));
+      modalItems.splice(idx, 1);
+      renderItems();
+      updateQtyHint();
+    });
+    r.append(k, x);
+    row.append(l, r);
+    el.appendChild(row);
+  });
+  updateSplitBtn();
+}
+function updateSplitBtn(){
+  const b = $('btn-save-split');
+  const show = !editing && modalItems.length >= 2;
+  b.classList.toggle('hidden', !show);
+  if(show) b.textContent = `📑 品目ごとに分けて登録(${modalItems.length}品)`;
 }
 function renderChips(){
   const row = $('chip-row');
@@ -859,7 +892,9 @@ async function analyzePhoto(){
       {type:'text', text:
 `この食事の写真を栄養士として分析してください。写っている料理・食品を特定し、日本の一般的な提供量を基準に、全体の摂取カロリーとPFC(たんぱく質・脂質・炭水化物)を推定してください。
 
-料理の特定に迷う場合(似た料理がある、肉や具材の種類が写真だけでは断定できない等)は、ありうる解釈をそれぞれ別のcandidateとして複数入れてください。例: ひき肉と目玉焼きが乗ったご飯なら「ガパオライス」「そぼろ丼」の両方。エスニック料理・丼もの・炒め物は特に取り違えやすいので、少しでも迷いがあれば候補を分けてください。
+重要: 複数の皿・小鉢が写っている場合(和定食・家庭の食卓など)は、itemsを必ず皿単位で1品ずつ分けてください。itemsは後で1品ずつ個別registrationされるので、各itemの名前は単体で通じる具体的な料理名にしてください(「焼き魚」ではなく「サバの塩焼き」、「ご飯」より「雑穀ご飯」)。dish_nameも「中華定食」「定食セット」のような曖昧な総称は避け、主菜がわかる名前にしてください(例:「サバの塩焼き定食」)。
+
+料理の特定に迷う場合(似た料理がある、肉や具材の種類が写真だけでは断定できない等)は、ありうる解釈をそれぞれ別のcandidateとして複数入れてください。例: ひき肉と目玉焼きが乗ったご飯なら「ガパオライス」「そぼろ丼」の両方。エスニック料理・丼もの・炒め物・魚の種類は特に取り違えやすいので、少しでも迷いがあれば候補を分けてください。
 
 ${AI_JSON_SPEC}
 
@@ -943,6 +978,31 @@ $('btn-save').addEventListener('click', async ()=>{
   renderToday();
   toast(editing ? '更新しました' : '記録しました 🎉');
 });
+$('btn-save-split').addEventListener('click', async ()=>{
+  const items = modalItems.filter(i => i.name || i.kcal > 0);
+  if(items.length < 2) return;
+  const q = modalQty;
+  const base = Date.now();
+  for(let idx = 0; idx < items.length; idx++){
+    const i = items[idx];
+    await dbPut({
+      date: currentDate,
+      mealType: modalMealType,
+      name: q !== 1 ? `${i.name || '(名称なし)'}(×${q})` : (i.name || '(名称なし)'),
+      kcal: Math.round((i.kcal||0)*q),
+      p: round1((i.p||0)*q),
+      f: round1((i.f||0)*q),
+      c: round1((i.c||0)*q),
+      items: [],
+      thumb: modalPhoto.thumb,
+      createdAt: base + idx
+    });
+  }
+  closeModal();
+  renderToday();
+  toast(`${items.length}品を個別に登録しました 🎉 間違いはカードをタップして修正できます`);
+});
+
 $('btn-delete').addEventListener('click', async ()=>{
   if(!editing) return;
   if(!confirm('この記録を削除しますか?')) return;
