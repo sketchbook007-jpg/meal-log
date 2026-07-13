@@ -163,6 +163,7 @@ nav.tabbar{
 .seg{display:flex;background:var(--card);border-radius:11px;padding:4px;gap:4px;border:1px solid var(--line)}
 .seg button{flex:1;padding:8px 0;border-radius:8px;font-size:13px;font-weight:600;color:var(--sub)}
 .seg button.on{background:var(--accent);color:#fff}
+#qty-seg button{font-size:11px;padding:8px 0;letter-spacing:-0.3px}
 .items-list{font-size:12px;color:var(--sub);background:var(--card);border-radius:11px;padding:10px 12px;margin-bottom:12px}
 .items-list div{display:flex;justify-content:space-between;padding:2px 0}
 .quick-title{font-size:12px;font-weight:600;color:var(--sub);margin:2px 0 6px}
@@ -332,7 +333,12 @@ nav.tabbar{
     <div class="chip-row hidden" id="ai-candidates" style="margin-bottom:10px"></div>
 
     <div id="quick-add-wrap">
-      <div class="quick-title">クイック入力(マイメニュー / 最近の食事)</div>
+      <div class="quick-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>クイック入力(マイメニュー / 最近の食事)</span>
+        <label style="display:flex;align-items:center;gap:5px;font-weight:600;color:var(--accent)">
+          <input type="checkbox" id="chip-sum-mode" style="width:15px;height:15px;accent-color:var(--accent)">タップで合算
+        </label>
+      </div>
       <div class="chip-row" id="chip-row"></div>
     </div>
 
@@ -360,7 +366,7 @@ nav.tabbar{
       <div style="display:flex;gap:8px;align-items:center">
         <button class="nav-btn" id="qty-minus" style="width:36px;height:36px;font-size:18px">−</button>
         <div class="seg" id="qty-seg" style="flex:1">
-          <button data-q="0.5">×0.5</button><button data-q="1" class="on">×1</button><button data-q="1.5">×1.5</button><button data-q="2">×2</button>
+          <button data-q="0.5">×0.5</button><button data-q="0.75">×0.75</button><button data-q="1" class="on">×1</button><button data-q="1.25">×1.25</button><button data-q="1.5">×1.5</button><button data-q="2">×2</button>
         </div>
         <button class="nav-btn" id="qty-plus" style="width:36px;height:36px;font-size:18px">＋</button>
       </div>
@@ -640,9 +646,26 @@ function renderChips(){
     const s = document.createElement('small'); s.textContent = `${Math.round(p.kcal)}kcal`;
     b.appendChild(s);
     b.addEventListener('click', ()=>{
-      $('in-name').value = p.name;
-      $('in-kcal').value = Math.round(p.kcal);
-      $('in-p').value = p.p; $('in-f').value = p.f; $('in-c').value = p.c;
+      if($('chip-sum-mode').checked){
+        // 合算モード: 現在の値に足し上げる(セット作り用)
+        $('in-kcal').value = Math.round((parseFloat($('in-kcal').value)||0) + (p.kcal||0));
+        $('in-p').value = round1((parseFloat($('in-p').value)||0) + (p.p||0));
+        $('in-f').value = round1((parseFloat($('in-f').value)||0) + (p.f||0));
+        $('in-c').value = round1((parseFloat($('in-c').value)||0) + (p.c||0));
+        const cur = $('in-name').value.trim();
+        $('in-name').value = cur ? `${cur}+${p.name}` : p.name;
+        modalItems = [...modalItems, {name:p.name, amount:'', kcal:p.kcal||0, p:p.p||0, f:p.f||0, c:p.c||0}];
+        renderItems();
+        $('ai-status').textContent = '合算中 — 名前を「朝食セット」等に変えてマイメニュー登録すると次回ワンタップ';
+        $('ai-status').classList.remove('err');
+      } else {
+        $('in-name').value = p.name;
+        $('in-kcal').value = Math.round(p.kcal);
+        $('in-p').value = p.p; $('in-f').value = p.f; $('in-c').value = p.c;
+        modalItems = (p.items||[]).map(i=>({...i}));
+        renderItems();
+      }
+      updateQtyHint();
     });
     row.appendChild(b);
   }
@@ -705,6 +728,7 @@ function openModal(meal, mealType){
   $('save-preset').checked = false;
   $('btn-delete').classList.toggle('hidden', !meal);
   $('ai-status').textContent = ''; $('ai-status').classList.remove('err');
+  $('chip-sum-mode').checked = false;
   setMealType(meal?.mealType || mealType || guessMealType());
   setQty(1);
   renderPhotoZone(); renderItems(); renderChips();
@@ -909,9 +933,9 @@ $('btn-save').addEventListener('click', async ()=>{
   if(editing) meal.id = editing.id;
   await dbPut(meal);
   if($('save-preset').checked && name){
-    // マイメニューには×1(1人前)の値で登録する
+    // マイメニューには×1(1人前)の値で登録する(セットは構成要素も保持)
     presets = presets.filter(p=>p.name!==name);
-    presets.unshift({name, kcal:Math.round(baseKcal), p:baseP, f:baseF, c:baseC});
+    presets.unshift({name, kcal:Math.round(baseKcal), p:baseP, f:baseF, c:baseC, items:modalItems});
     presets = presets.slice(0,30);
     savePresets();
   }
