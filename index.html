@@ -172,6 +172,7 @@ nav.tabbar{
   padding:7px 13px;font-size:12px;font-weight:600;white-space:nowrap;
 }
 .chip small{color:var(--sub);font-weight:500}
+.chip.sel{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
 .check-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:14px;padding:0 2px}
 .check-row input{width:18px;height:18px;accent-color:var(--accent)}
 
@@ -328,6 +329,7 @@ nav.tabbar{
       <button class="btn ai" id="btn-analyze">✨ AIでカロリー・PFCを解析</button>
     </div>
     <div class="ai-status" id="ai-status"></div>
+    <div class="chip-row hidden" id="ai-candidates" style="margin-bottom:10px"></div>
 
     <div id="quick-add-wrap">
       <div class="quick-title">クイック入力(マイメニュー / 最近の食事)</div>
@@ -693,6 +695,9 @@ function openModal(meal, mealType){
   dbAll().then(buildNameIndex).catch(()=>{ nameIndex = []; });
   $('name-suggest').classList.add('hidden');
   $('name-suggest').innerHTML = '';
+  aiCandidates = [];
+  $('ai-candidates').classList.add('hidden');
+  $('ai-candidates').innerHTML = '';
   $('modal-title').textContent = meal ? '記録を編集' : '食事を記録';
   $('in-name').value = meal?.name || '';
   $('in-kcal').value = meal?.kcal ?? '';
@@ -746,7 +751,9 @@ function resizeImage(file, maxSide, quality){
 
 /* ---------- AI analysis (photo & name) ---------- */
 const AI_JSON_SPEC = `次のJSONだけを出力してください(説明文・コードブロック記号は不要):
-{"dish_name":"全体を表す短いメニュー名(日本語)","items":[{"name":"品目名","amount":"目安量(例: 150g, 1杯)","kcal":数値,"p":数値,"f":数値,"c":数値}],"total":{"kcal":数値,"p":数値,"f":数値,"c":数値},"confidence":"high/medium/low","note":"補足があれば一言(日本語)"}`;
+{"candidates":[{"dish_name":"メニュー名(日本語)","items":[{"name":"品目名","amount":"目安量(例: 150g, 1杯)","kcal":数値,"p":数値,"f":数値,"c":数値}],"total":{"kcal":数値,"p":数値,"f":数値,"c":数値},"confidence":"high/medium/low","note":"補足があれば一言(日本語)"}]}
+
+candidatesには最も可能性が高い解釈を先頭に、ありうる解釈を最大4件入れてください。解釈が1つに定まる場合は1件だけで構いません。`;
 
 async function claudeEstimate(content){
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -757,7 +764,7 @@ async function claudeEstimate(content){
       'anthropic-version':'2023-06-01',
       'anthropic-dangerous-direct-browser-access':'true'
     },
-    body: JSON.stringify({model: settings.model, max_tokens: 1500, messages:[{role:'user', content}]})
+    body: JSON.stringify({model: settings.model, max_tokens: 2500, messages:[{role:'user', content}]})
   });
   if(!resp.ok){
     const err = await resp.json().catch(()=>null);
@@ -773,19 +780,45 @@ async function claudeEstimate(content){
   if(!jsonMatch) throw new Error('解析結果を読み取れませんでした。もう一度お試しください。');
   const r = JSON.parse(jsonMatch[0]);
   if(r.error) throw new Error(r.error);
-  return r;
+  // 新形式{candidates:[...]}と旧形式(単一オブジェクト)の両方を受け付ける
+  const cands = (Array.isArray(r.candidates) && r.candidates.length ? r.candidates : [r])
+    .filter(c => c && c.total && (c.total.kcal || c.total.kcal === 0));
+  if(!cands.length) throw new Error('解析結果を読み取れませんでした。もう一度お試しください。');
+  return cands.slice(0, 4);
 }
 
-function applyEstimate(r, keepName){
-  if(!keepName && r.dish_name) $('in-name').value = r.dish_name;
-  $('in-kcal').value = Math.round(r.total?.kcal||0);
-  $('in-p').value = round1(r.total?.p||0);
-  $('in-f').value = round1(r.total?.f||0);
-  $('in-c').value = round1(r.total?.c||0);
-  modalItems = (r.items||[]).map(i=>({name:i.name, amount:i.amount, kcal:i.kcal, p:i.p, f:i.f, c:i.c}));
+let aiCandidates = [];
+function applyEstimate(cand, keepName){
+  if(!keepName && cand.dish_name) $('in-name').value = cand.dish_name;
+  $('in-kcal').value = Math.round(cand.total?.kcal||0);
+  $('in-p').value = round1(cand.total?.p||0);
+  $('in-f').value = round1(cand.total?.f||0);
+  $('in-c').value = round1(cand.total?.c||0);
+  modalItems = (cand.items||[]).map(i=>({name:i.name, amount:i.amount, kcal:i.kcal, p:i.p, f:i.f, c:i.c}));
   renderItems();
-  const conf = {high:'高', medium:'中', low:'低'}[r.confidence] || '-';
-  $('ai-status').textContent = `解析完了(確度: ${conf})${r.note? ' — '+r.note : ''} 数値は編集できます`;
+  updateQtyHint();
+  const conf = {high:'高', medium:'中', low:'低'}[cand.confidence] || '-';
+  const more = aiCandidates.length > 1 ? ' 他の候補↓もタップで選べます' : ' 数値は編集できます';
+  $('ai-status').textContent = `解析完了(確度: ${conf})${cand.note? ' — '+cand.note : ''}${more}`;
+}
+function renderCandidates(selectedIdx){
+  const box = $('ai-candidates');
+  box.innerHTML = '';
+  if(aiCandidates.length < 2){ box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  aiCandidates.forEach((cand, i)=>{
+    const b = document.createElement('button');
+    b.className = 'chip' + (i === selectedIdx ? ' sel' : '');
+    b.textContent = (cand.dish_name || `候補${i+1}`) + ' ';
+    const s = document.createElement('small');
+    s.textContent = `${Math.round(cand.total?.kcal||0)}kcal`;
+    b.appendChild(s);
+    b.addEventListener('click', ()=>{
+      applyEstimate(cand, false);   // 自分で選んだ候補は名前も反映する
+      renderCandidates(i);
+    });
+    box.appendChild(b);
+  });
 }
 
 $('btn-analyze').addEventListener('click', analyzePhoto);
@@ -797,16 +830,20 @@ async function analyzePhoto(){
   st.textContent = ''; st.classList.remove('err');
   try{
     const b64 = modalPhoto.full.split(',')[1];
-    const r = await claudeEstimate([
+    const cands = await claudeEstimate([
       {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
       {type:'text', text:
 `この食事の写真を栄養士として分析してください。写っている料理・食品を特定し、日本の一般的な提供量を基準に、全体の摂取カロリーとPFC(たんぱく質・脂質・炭水化物)を推定してください。
+
+料理の特定に迷う場合(似た料理がある、肉や具材の種類が写真だけでは断定できない等)は、ありうる解釈をそれぞれ別のcandidateとして複数入れてください。例: ひき肉と目玉焼きが乗ったご飯なら「ガパオライス」「そぼろ丼」の両方。エスニック料理・丼もの・炒め物は特に取り違えやすいので、少しでも迷いがあれば候補を分けてください。
 
 ${AI_JSON_SPEC}
 
 食べ物が写っていない場合は {"error":"食事の写真ではないようです"} と出力してください。`}
     ]);
-    applyEstimate(r, false);
+    aiCandidates = cands;
+    applyEstimate(cands[0], false);
+    renderCandidates(0);
   }catch(err){
     st.textContent = '⚠ ' + (err.message || '解析に失敗しました');
     st.classList.add('err');
@@ -826,13 +863,17 @@ async function analyzeByName(){
   btn.innerHTML = '<span class="spin"></span>推定中…';
   st.textContent = ''; st.classList.remove('err');
   try{
-    const r = await claudeEstimate([{type:'text', text:
+    const cands = await claudeEstimate([{type:'text', text:
 `「${name}」という食事または市販商品を1人前(市販品なら標準的な1個/1袋/1杯)食べたときの摂取カロリーとPFC(たんぱく質・脂質・炭水化物)を、栄養士として推定してください。コンビニ商品・外食チェーンのメニュー名と思われる場合は、その商品の一般に知られる栄養成分に近い値を使ってください。量が特定できない場合は日本の一般的な提供量を仮定し、noteにその仮定を書いてください。
+
+この名前に主要なバリエーションがある場合(肉の種類・調理法・スタイルの違いなど)は、それぞれ別のcandidateとして入れてください。例:「ガパオライス」なら「ガパオライス(鶏ひき肉)」「ガパオライス(豚ひき肉)」、「カレーライス」なら「ポークカレー」「ビーフカレー」「チキンカレー」。dish_nameには違いがわかる名前を付けてください。名前が既に具体的(例:「鶏ガパオ」)なら1件だけで構いません。
 
 ${AI_JSON_SPEC}
 
 食品名と認識できない場合は {"error":"食品名を認識できませんでした"} と出力してください。`}]);
-    applyEstimate(r, true);
+    aiCandidates = cands;
+    applyEstimate(cands[0], true);
+    renderCandidates(0);
   }catch(err){
     st.textContent = '⚠ ' + (err.message || '推定に失敗しました');
     st.classList.add('err');
